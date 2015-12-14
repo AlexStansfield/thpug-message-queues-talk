@@ -1,0 +1,18 @@
+{% extends 'base.html.twig' %}
+
+{% block body %}
+    <div id="wrapper">
+        <div id="container">
+            <div id="header">
+                <h1><span>Profiles</h1>
+            </div>
+            <div id="profiles">
+                {% for profile in profiles %}
+                    <div class="profile">
+                        {% include 'default/profile_partial.html.twig' with {'profile': profile} only %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+{% endblock %}

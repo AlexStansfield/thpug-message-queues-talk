@@ -1,0 +1,15 @@
+{% extends 'base.html.twig' %}
+
+{% block body %}
+    <div id="wrapper">
+        <div id="container">
+            <div id="header">
+                <h1>Profile</h1>
+                <h2><a href="{{ profile.id }}/edit">Edit</a> | <a href="{{ profile.id }}/editmq">Edit MQ</a></h2>
+            </div>
+            <div id="profile">
+                {% include 'default/profile_partial.html.twig' with {'profile': profile} only %}
+            </div>
+        </div>
+    </div>
+{% endblock %}

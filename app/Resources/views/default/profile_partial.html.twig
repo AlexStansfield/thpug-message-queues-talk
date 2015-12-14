@@ -1,0 +1,12 @@
+<p>ID: {{ profile.id }}</p>
+<p>Username: {{ profile.username }}</p>
+<p>
+    Photo: <br/>
+    {% if profile.photoUploading %}
+        <img src="https://s3-ap-southeast-1.amazonaws.com/pugth-message-queues/pleasewait.gif">
+    {% elseif profile.photo is empty %}
+        <img src="https://s3-ap-southeast-1.amazonaws.com/pugth-message-queues/emptyprofile.png">
+    {% else %}
+        <img style="max-width: 600px" src="{{ profile.photo }}">
+    {% endif %}
+</p>
