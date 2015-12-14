@@ -65,3 +65,17 @@ swiftmailer:
     username:  "%mailer_user%"
     password:  "%mailer_password%"
     spool:     { type: memory }
+
+leezy_pheanstalk:
+    pheanstalks:
+        primary:
+            server: localhost
+            port: 11300
+            default: true
+
+aws:
+    version: latest
+    region: %aws_region%
+    credentials:
+        key: %aws_key%
+        secret: %aws_secret%

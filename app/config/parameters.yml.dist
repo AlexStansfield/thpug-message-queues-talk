@@ -17,3 +17,8 @@ parameters:
 
     # A secret key that's used to generate certain security-related tokens
     secret:            ThisTokenIsNotSoSecretChangeIt
+
+    aws_region:        aws-region
+    aws_key:           aws-key
+    aws_secret:        aws-secret
+    aws_s3_bucket:     pugth-message-queues
