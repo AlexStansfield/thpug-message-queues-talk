@@ -1,4 +1,4 @@
-mq
-==
+THPUG Talk - Scaling with Message Queue
+=======================================
 
-A Symfony project created on December 13, 2015, 2:18 pm.
+Apologies for the code quality, mostly written in the back of a taxi.
