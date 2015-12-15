@@ -7,6 +7,7 @@ use AppBundle\Form\ProfilesType;
 use AppBundle\Form\ProfileType;
 use Aws\Result;
 use Symfony\Bundle\FrameworkBundle\Controller\Controller;
+use Symfony\Component\HttpFoundation\File\File;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -56,25 +57,15 @@ class DefaultController extends Controller
 
         if ($form->isValid()) {
             // $file stores the uploaded PDF file
-            /** @var UploadedFile $file */
-            $tmpFile = $profile->getPhotoUpload();
+            /** @var UploadedFile $tmpFile */
+            $uploadedFile = $profile->getPhotoUpload();
+            $contentType = $uploadedFile->getMimeType();
 
-            // Generate a unique name for the file before saving it
-            $fileName = md5(uniqid()) . '.' . $tmpFile->guessExtension();
-            $contentType = $tmpFile->getMimeType();
+            // Rename and Move the Uploaded File to uploads folder
+            $tmpFile = $this->processUploadedFile($uploadedFile);
 
-            // Move the file to the directory where brochures are stored
-            $photosDir = $this->container->getParameter('kernel.root_dir') . '/../web/uploads/photos';
-            $file = $tmpFile->move($photosDir, $fileName);
-
-            // Upload the photo to s3
-            $fileUrl = $this->get('service_photo_upload')->uploadPhoto($file, $contentType);
-
-            // Update the Profile Photo
-            $profile->setPhoto($fileUrl);
-            $profile->setPhotoUploading(false);
-
-            $this->getDoctrine()->getManager()->flush($profile);
+            // Upload Profile Photo
+            $this->uploadProfilePhoto($profile, $tmpFile, $contentType);
 
             return $this->redirect($this->generateUrl('profile_view', ['id' => $profile->getId()]));
         }
@@ -104,9 +95,9 @@ class DefaultController extends Controller
             $uploadedFile = $request->files->get('profiles')['photoUpload'];
             $contentType = $uploadedFile->getMimeType();
             $extension = $uploadedFile->guessExtension();
-            $fileName = md5(uniqid()) . '.' . $extension;
-            $photosDir = $this->container->getParameter('kernel.root_dir') . '/../web/uploads/photos';
-            $tmpFile = $uploadedFile->move($photosDir, $fileName);
+
+            // Rename and Move the Uploaded File to uploads folder
+            $tmpFile = $this->processUploadedFile($uploadedFile);
 
             $profiles = $em->getRepository('AppBundle:Profile')->findAll();
             $numProfiles = count($profiles);
@@ -114,15 +105,10 @@ class DefaultController extends Controller
 
             foreach ($profiles as $profile) {
                 if ($i === $numProfiles) {
-                    $fileUrl = $this->get('service_photo_upload')->uploadPhoto($tmpFile, $contentType);
-
-                    // Set Photo
-                    $profile->setPhoto($fileUrl);
-                    $profile->setPhotoUploading(false);
-
-                    // Flush to db
-                    $em->flush($profile);
+                    // Last Profile so just Upload Profile Photo
+                    $this->uploadProfilePhoto($profile, $tmpFile, $contentType);
                 } else {
+                    // Not the last Profile so upload it asynchronously
                     $fileName = md5(uniqid()) . '.' . $extension;
 
                     $callback = function(Result $result) use ($em, $profile) {
@@ -167,29 +153,22 @@ class DefaultController extends Controller
             $uploadedFile = $request->files->get('profiles')['photoUpload'];
             $contentType = $uploadedFile->getMimeType();
             $extension = $uploadedFile->guessExtension();
-            $fileName = md5(uniqid()) . '.' . $extension;
-            $photosDir = $this->container->getParameter('kernel.root_dir') . '/../web/uploads/photos';
-            $tmpFile = $uploadedFile->move($photosDir, $fileName);
+
+            // Rename and Move the Uploaded File to uploads folder
+            $tmpFile = $this->processUploadedFile($uploadedFile);
 
             $profiles = $em->getRepository('AppBundle:Profile')->findAll();
 
+            // Put message on queue for each profile
             foreach ($profiles as $profile) {
-                $message = [
-                    'profile_id' => $profile->getId(),
-                    'file_path' => $tmpFile->getPathname(),
-                    'content_type' => $contentType,
-                    'file_name' => md5(uniqid()) . '.' . $extension
-                ];
+                $fileName = md5(uniqid()) . '.' . $extension;
 
-                // Put message on message queue
-                $this->get('leezy.pheanstalk')->put(json_encode($message));
-
-                // Mark the Photo as Uploading
-                $profile->setPhotoUploading(true);
+                // Send to the Queue
+                $this->sendToQueue($profile, $tmpFile, $contentType, $fileName);
             }
 
             // Flush Changes to DB
-            $this->getDoctrine()->getManager()->flush();
+            $em->flush();
 
             return $this->redirect($this->generateUrl('profiles_view'));
         }
@@ -216,28 +195,15 @@ class DefaultController extends Controller
 
         if ($form->isValid()) {
             // $file stores the uploaded PDF file
-            /** @var UploadedFile $file */
-            $tmpFile = $profile->getPhotoUpload();
+            /** @var UploadedFile $tmpFile */
+            $uploadedFile = $profile->getPhotoUpload();
+            $contentType = $uploadedFile->getMimeType();
 
-            // Generate a unique name for the file before saving it
-            $fileName = md5(uniqid()) . '.' . $tmpFile->guessExtension();
-            $contentType = $tmpFile->getMimeType();
+            // Rename and Move the Uploaded File to uploads folder
+            $tmpFile = $this->processUploadedFile($uploadedFile);
 
-            // Move the file to the directory where uploads are stored
-            $photosDir = $this->container->getParameter('kernel.root_dir') . '/../web/uploads/photos';
-            $file = $tmpFile->move($photosDir, $fileName);
-
-            $message = [
-                'profile_id' => $profile->getId(),
-                'file_path' => $file->getPathname(),
-                'content_type' => $contentType
-            ];
-
-            // Put message on message queue
-            $this->get('leezy.pheanstalk')->put(json_encode($message));
-
-            // Mark the Photo as Uploading
-            $profile->setPhotoUploading(true);
+            // Send to the Queue
+            $this->sendToQueue($profile, $tmpFile, $contentType);
 
             // Flush Changes to DB
             $this->getDoctrine()->getManager()->flush($profile);
@@ -268,5 +234,71 @@ class DefaultController extends Controller
         );
 
         return new Response($html);
+    }
+
+    /**
+     * Create Message and send to Queue
+     *
+     * @param Profile $profile
+     * @param \SplFileInfo $file
+     * @param string $contentType
+     * @param string|null $fileName
+     */
+    protected function sendToQueue(Profile $profile, \SplFileInfo $file, $contentType, $fileName = null)
+    {
+        $message = [
+            'profile_id' => $profile->getId(),
+            'file_path' => $file->getPathname(),
+            'content_type' => $contentType
+        ];
+
+        // If target filename supplied then use it
+        if (null !== $fileName) {
+            $message['file_name'] = $fileName;
+        }
+
+        // Put message on message queue
+        $this->get('leezy.pheanstalk')->put(json_encode($message));
+
+        // Mark the Photo as Uploading
+        $profile->setPhotoUploading(true);
+    }
+
+    /**
+     * Upload Profile Photo and update Profile
+     *
+     * @param Profile $profile
+     * @param File $file
+     * @param string $contentType
+     */
+    protected function uploadProfilePhoto(Profile $profile, File $file, $contentType)
+    {
+        // Upload the photo to S3
+        $fileUrl = $this->get('service_photo_upload')->uploadPhoto($file, $contentType);
+
+        // Update the Profile Photo
+        $profile->setPhoto($fileUrl);
+        $profile->setPhotoUploading(false);
+
+        // Flush to DB
+        $this->getDoctrine()->getManager()->flush($profile);
+    }
+
+    /**
+     * Process the UploadedFile and move it to a permanent location
+     *
+     * @param UploadedFile $tmpFile
+     * @return File
+     */
+    public function processUploadedFile(UploadedFile $tmpFile)
+    {
+        // Generate a unique name for the file before saving it
+        $fileName = md5(uniqid()) . '.' . $tmpFile->guessExtension();
+
+        // Move the file to the directory where brochures are stored
+        $photosDir = $this->container->getParameter('kernel.root_dir') . '/../web/uploads/photos';
+        $file = $tmpFile->move($photosDir, $fileName);
+
+        return $file;
     }
 }
