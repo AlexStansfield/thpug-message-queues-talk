@@ -4,6 +4,12 @@ parameters:
 #    parameter_name: value
 
 services:
+    app.command.my_command:
+        class: AppBundle\Command\PhotoUploadWorkerCommand
+        arguments: ["@leezy.pheanstalk", 'thpug:photoupload']
+        tags:
+            - { name: console.command }
+
     service_photo_upload:
         class: AppBundle\Service\PhotoUploadService
         arguments:

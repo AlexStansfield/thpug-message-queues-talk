@@ -6,6 +6,7 @@ use JackTales\Command\AbstractWorkerCommand;
 use Pheanstalk\Job;
 use Symfony\Component\DependencyInjection\ContainerAwareInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\DependencyInjection\ContainerAwareTrait;
 use Symfony\Component\Finder\SplFileInfo;
 
 /**
@@ -15,10 +16,7 @@ use Symfony\Component\Finder\SplFileInfo;
  */
 class PhotoUploadWorkerCommand extends AbstractWorkerCommand implements ContainerAwareInterface
 {
-    /**
-     * @var ContainerInterface|null
-     */
-    private $container;
+    use ContainerAwareTrait;
 
     protected function configure()
     {
